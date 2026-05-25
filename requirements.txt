@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+aiomysql
+cryptography
+dateparser
+pandas
+requests
+pydantic
+pytest
+pytest-asyncio
+httpx
+gradio==5.29.1
+python-dotenv
+pydantic-settings
+groq
+
+

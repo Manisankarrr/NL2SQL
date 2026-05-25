@@ -1,0 +1,32 @@
+# Virtual Environments
+venv/
+env/
+.venv/
+.env
+
+# Python Caching & Compilation
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Test & Coverage
+.pytest_cache/
+.coverage
+tests/
+
+# IDEs & Environments
+.idea/
+.vscode/
+.git/
+.gitignore
+
+# Documentation & Demos
+README.md
+SETUP_GUIDE.md
+demo.py
+
+# Docker-specific
+Dockerfile
+docker-compose.yml
+.dockerignore

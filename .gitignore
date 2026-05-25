@@ -1,0 +1,31 @@
+# Virtual Environments
+venv/
+env/
+.venv/
+.env
+
+# Python Caching & Compilation
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Test & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+nosetests.xml
+coverage.xml
+
+# IDEs & Environments
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+
+*.pth

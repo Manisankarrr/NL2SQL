@@ -1,0 +1,72 @@
+# ==============================================================================
+# BarberSQL Docker Compose Orchestration Setup
+#
+# NOTES:
+# - OpenRouter and Groq are external cloud APIs — no local model containers needed.
+# - You must set OPENROUTER_API_KEY and GROQ_API_KEY in your local .env file.
+# - Port Mappings:
+#   - Gradio frontend: http://localhost:7860
+#   - FastAPI backend: http://localhost:8000
+#   - MySQL 8.0 Database: localhost:3306
+# ==============================================================================
+
+version: "3.9"
+
+services:
+
+  mysql:
+    image: mysql:8.0
+    container_name: barbersql_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME:-barbershopsql}
+    volumes:
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost",
+             "-u", "root", "--password=${DB_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: barbersql_backend
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      - DB_HOST=mysql
+    volumes:
+      - .:/app
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  frontend:
+    image: python:3.11-slim
+    container_name: barbersql_frontend
+    working_dir: /app
+    command: >
+      sh -c "pip install gradio requests pandas -q &&
+             python frontend/app.py"
+    ports:
+      - "7860:7860"
+    volumes:
+      - .:/app
+    environment:
+      - BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend
+
+volumes:
+  mysql_data:
