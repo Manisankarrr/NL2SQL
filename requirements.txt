@@ -13,5 +13,6 @@ gradio==5.29.1
 python-dotenv
 pydantic-settings
 groq
+sentence-transformers
 
 

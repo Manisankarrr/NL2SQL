@@ -1,3 +1,5 @@
+import datetime
+import decimal
 from backend.database.connection import get_connection, get_cursor
 from backend.config import settings
 from dataclasses import dataclass, field
@@ -17,17 +19,44 @@ class ExecutionResult:
     sql_used: str = ""
 
 
+def _convert_timedelta(value) -> str:
+    total = int(value.total_seconds())
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    seconds = total % 60
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def _serialize_row(row: dict) -> dict:
+    new_row = {}
+    for k, v in row.items():
+        if isinstance(v, datetime.timedelta):
+            new_row[k] = _convert_timedelta(v)
+        elif isinstance(v, datetime.datetime):
+            new_row[k] = v.strftime("%Y-%m-%d %H:%M:%S")
+        elif isinstance(v, datetime.date):
+            new_row[k] = v.strftime("%Y-%m-%d")
+        elif isinstance(v, datetime.time):
+            new_row[k] = v.strftime("%H:%M:%S")
+        elif isinstance(v, decimal.Decimal):
+            new_row[k] = float(v)
+        else:
+            new_row[k] = v
+    return new_row
+
+
 async def execute_select(sql: str) -> ExecutionResult:
     start = time.perf_counter()
     try:
         async with get_connection() as conn:
             cursor = await get_cursor(conn, dict_cursor=True)
             await cursor.execute(sql)
-            rows = await cursor.fetchmany(settings.max_result_rows)
+            raw_rows = await cursor.fetchmany(settings.max_result_rows)
+            rows = [_serialize_row(dict(row)) for row in raw_rows]
             columns = [d[0] for d in cursor.description] if cursor.description else []
             elapsed = round((time.perf_counter() - start) * 1000, 2)
             logger.info(f"SELECT executed in {elapsed}ms, {len(rows)} rows")
-            return ExecutionResult(success=True, rows=list(rows), columns=columns, execution_time_ms=elapsed, sql_used=sql)
+            return ExecutionResult(success=True, rows=rows, columns=columns, execution_time_ms=elapsed, sql_used=sql)
     except aiomysql.Error as e:
         elapsed = round((time.perf_counter() - start) * 1000, 2)
         logger.error(f"SELECT failed: {e}")
