@@ -117,6 +117,64 @@ class PipelineLogger:
         self._line("✓", "DONE", full_message)
         print("─" * 52)
 
+    def repair(self, message: str):
+        self.warn += 1
+        self._line("⚠", "REPAIR", message)
+
+    def retrieval(
+        self,
+        query_preview: str,
+        chunks_found: int,
+        tables_selected: list[str],
+        cache_hit: bool,
+    ):
+        cache_label = "cache hit" if cache_hit else "fresh embed"
+        tables_str = ",".join(tables_selected)
+        msg = (
+            f"{query_preview[:40]}... · {chunks_found} chunks · "
+            f"tables: {tables_str} · {cache_label}"
+        )
+        self._line(" ", "RETRIEVAL", msg)
+
+    def ambiguity(
+        self,
+        ambiguity_type: str,
+        is_ambiguous: bool,
+        confidence: float,
+        term: str | None = None,
+    ):
+        if is_ambiguous:
+            msg = f"DETECTED {ambiguity_type} · term: '{term}' · confidence {confidence:.2f}"
+        else:
+            msg = f"CLEAR · confidence {confidence:.2f}"
+        self._line(" ", "AMBIGUITY", msg)
+
+    def confidence(self, score: float, label: str, recommend_confirm: bool):
+        action = "confirm recommended" if recommend_confirm else "auto-execute"
+        msg = f"score={score:.2f} · {label} · {action}"
+        self._line(" ", "CONFIDENCE", msg)
+
+    def plan(
+        self,
+        complexity: str,
+        query_type: str,
+        required_tables: list[str],
+        needs_join: bool,
+    ):
+        tables_str = ",".join(required_tables)
+        join_label = "join required" if needs_join else "single table"
+        msg = f"{complexity} · type={query_type} · tables={tables_str} · {join_label}"
+        self._line(" ", "PLAN", msg)
+
+    def embed(self, action: str, chunk_count: int, elapsed_s: float):
+        msg = f"Schema embeddings {action} · {chunk_count} chunks · {elapsed_s:.2f}s"
+        self._line(" ", "EMBED", msg)
+
+    def eval_result(self, metric: str, value: float, total: int):
+        self.ok += 1
+        msg = f"{metric}: {value:.1f}% · {total} tests"
+        self._line("✓", "EVAL", msg)
+
 
 
 def setup_logging(log_level: str = "INFO") -> None:

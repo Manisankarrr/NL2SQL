@@ -9,7 +9,6 @@ from backend.database.schema_loader import get_schema
 from backend.routers.query import router
 from backend.middleware.logger import setup_logging, RequestLoggingMiddleware, pipeline_logger
 from backend.middleware.error_handler import register_handlers
-
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -22,18 +21,34 @@ logger = logging.getLogger("barbersql")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    setup_logging()
-    pipeline_logger.stage("BarberSQL starting up")
     logger.info("Starting BarberSQL...")
     await create_pool()
     await get_schema()
-    pipeline_logger.ok("Database connected. Schema loaded.")
     logger.info("Database connected. Schema loaded. Ready.")
+
+    # Auto-complete any past appointments missed while server was off
+    try:
+        from backend.database.executor import execute_sql
+        result = await execute_sql(
+            "UPDATE appointments SET status = 'completed' "
+            "WHERE id > 0 AND ("
+            "    appointment_date < CURDATE() OR ("
+            "        appointment_date = CURDATE() AND "
+            "        appointment_time < CURTIME()"
+            "    )"
+            ") AND status = 'scheduled';"
+        )
+        if result.success and result.affected_rows > 0:
+            pipeline_logger.ok(
+                f"Auto-completed {result.affected_rows} past appointment(s) on startup"
+            )
+    except Exception as e:
+        logger.warning(f"Startup auto-complete failed: {e}")
+
     yield
     # Shutdown
     logger.info("Shutting down BarberSQL...")
     await close_pool()
-
 
 app = FastAPI(
     title="BarberSQL",
