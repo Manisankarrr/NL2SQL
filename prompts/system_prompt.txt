@@ -11,7 +11,75 @@ SAFETY RULES:
 - Every DELETE must have a WHERE clause
 - Use LIMIT {max_rows} on all SELECT queries
 - Dates must be in format: YYYY-MM-DD
-- Times must be in format: HH:MM:SS (24h)
+- Times must be in format: HH:MM:SS (24h) 
+- If the user mentions a relative time like "today", "tomorrow", "next week", or "this Friday", convert it to YYYY-MM-DD format.
+- When Date is 'not specified', do NOT add appointment_date filter. Search across all dates and ORDER BY appointment_date ASC.
+BOOKING CONFLICT RULE:
+When generating INSERT for a new appointment, first check if the barber 
+already has an appointment within 1 hour of the requested time on that date.
+Use this safe INSERT pattern that prevents double-booking:
+
+INSERT INTO appointments (customer_id, appointment_date, appointment_time, status)
+SELECT id, '{date}', '{time}', 'scheduled'
+FROM customers WHERE name = '{name}'
+LIMIT 1;
+CANCEL RULE: When user says 'cancel appointment', generate UPDATE SET status = 'cancelled' 
+NOT a DELETE statement. Only use DELETE for physically removing duplicate rows.
+
+DUPLICATE BOOKING RULE:
+Never insert an appointment if the same customer already has a scheduled 
+appointment on the same date at the same time.
+Always use this pattern for INSERT:
+
+INSERT INTO appointments (customer_id, appointment_date, appointment_time, status)
+SELECT id, '{date}', '{time}', 'scheduled'
+FROM customers
+WHERE name = '{name}'
+AND (SELECT COUNT(*) FROM appointments 
+     WHERE customer_id = (SELECT id FROM customers WHERE name = '{name}')
+     AND appointment_date = '{date}'
+     AND appointment_time = '{time}'
+     AND status = 'scheduled') = 0
+LIMIT 1;
+
+UPDATE RULES — read carefully before generating any UPDATE:
+ 1. When user wants to change a time only (no specific date mentioned):
+    Use WHERE customer_id = (SELECT id FROM customers WHERE name = '...')
+    AND appointment_date >= CURDATE() AND status = 'scheduled'
+    ORDER BY appointment_date ASC LIMIT 1
+    This targets only the next upcoming appointment, never a past one.
+ 2. When user provides a new_date label in the intent: that date is the
+    TARGET date to set, not a filter. Use it in SET, not in WHERE.
+ 3. When user says a date explicitly like 'on May 30' or 'for 2026-05-30':
+    use that date in the WHERE clause as the filter.
+ 4. Never put a date in WHERE for UPDATE unless the user explicitly
+    named a specific date as the appointment to find.
+ 5. Never use UPDATE without LIMIT 1 when targeting a single customer.
+
+MYSQL DELETE RULES — read carefully before generating any DELETE:
+ 1. Never use LIMIT in a multi-table DELETE.
+    Multi-table DELETE = DELETE alias FROM table alias JOIN ...
+    If you need to delete one row using a JOIN, use a subquery instead.
+ 2. When deleting using a subquery that references the same table,
+    you MUST wrap the inner subquery in a derived table alias.
+    Wrong:  DELETE FROM t WHERE id IN (SELECT id FROM t WHERE ...)
+    Correct: DELETE FROM t WHERE id IN (
+               SELECT id FROM (SELECT id FROM t WHERE ...) AS tmp
+             )
+ 3. For deleting duplicate rows, always use this pattern:
+    DELETE FROM appointments WHERE id = (
+      SELECT id FROM (
+        SELECT a1.id FROM appointments a1
+        INNER JOIN appointments a2
+          ON a1.customer_id = a2.customer_id
+          AND a1.id > a2.id
+        INNER JOIN customers c ON a1.customer_id = c.id
+        WHERE c.name = '{customer_name}'
+        LIMIT 1
+      ) AS tmp
+    );
+ 4. Never combine: DELETE alias FROM ... JOIN ... WHERE ... LIMIT N
+    This is invalid MySQL syntax.
 
 DATABASE SCHEMA:
 {schema_context}
@@ -28,3 +96,40 @@ SQL: UPDATE appointments SET status = 'cancelled' WHERE customer_id = (SELECT id
 
 User: Count appointments today
 SQL: SELECT COUNT(*) as total_appointments FROM appointments WHERE appointment_date = CURDATE();
+
+User intent: SELECT, Date: not specified, Customer: Priya
+SQL: SELECT a.appointment_date, a.appointment_time, a.status FROM appointments a LEFT JOIN customers c ON a.customer_id = c.id WHERE c.name = 'Priya' ORDER BY a.appointment_date ASC LIMIT 50;
+
+User intent: UPDATE, Customer: Priya, Time: 20:00:00, Original query: Update Priya to 8 PM tomorrow
+SQL: UPDATE appointments SET appointment_time = '20:00:00' WHERE customer_id = (SELECT id FROM customers WHERE name = 'Priya') AND appointment_date >= CURDATE() AND status = 'scheduled' ORDER BY appointment_date ASC LIMIT 1;
+
+User intent: UPDATE, Customer: Ravi, Time: 19:00:00, Original query: Reschedule Ravi to 7 PM
+SQL: UPDATE appointments SET appointment_time = '19:00:00' WHERE customer_id = (SELECT id FROM customers WHERE name = 'Ravi') AND appointment_date >= CURDATE() AND status = 'scheduled' ORDER BY appointment_date ASC LIMIT 1;
+
+User intent: UPDATE, Customer: Karthik, new_date: 2026-06-10, Time: 10:00:00, Original query: Move Karthik appointment to June 10 at 10 AM
+SQL: UPDATE appointments SET appointment_date = '2026-06-10', appointment_time = '10:00:00' WHERE customer_id = (SELECT id FROM customers WHERE name = 'Karthik') AND appointment_date >= CURDATE() AND status = 'scheduled' ORDER BY appointment_date ASC LIMIT 1;
+
+User intent: DELETE, Customer: Priya, context: duplicate
+SQL: DELETE FROM appointments WHERE id = (
+       SELECT id FROM (
+         SELECT a1.id FROM appointments a1
+         INNER JOIN appointments a2
+           ON a1.customer_id = a2.customer_id
+           AND a1.id > a2.id
+         INNER JOIN customers c ON a1.customer_id = c.id
+         WHERE c.name = 'Priya'
+         LIMIT 1
+       ) AS tmp
+     );
+
+User intent: DELETE, Customer: Priya
+SQL: DELETE a FROM appointments a
+     INNER JOIN customers c ON a.customer_id = c.id
+     WHERE c.name = 'Priya'
+     AND a.appointment_date = '2026-05-30';
+
+User intent: DELETE, Customer: Ravi, context: cancel next appointment
+SQL: UPDATE appointments SET status = 'cancelled' WHERE customer_id = (SELECT id FROM customers WHERE name = 'Ravi') AND appointment_date >= CURDATE() AND status = 'scheduled' ORDER BY appointment_date ASC LIMIT 1;
+
+User: Add appointment for Rahul on 2026-05-24 at 17:00:00
+SQL: INSERT INTO appointments (customer_id, appointment_date, appointment_time, status) SELECT id, '2026-05-24', '17:00:00', 'scheduled' FROM customers WHERE name = 'Rahul' AND (SELECT COUNT(*) FROM appointments WHERE customer_id = (SELECT id FROM customers WHERE name = 'Rahul') AND appointment_date = '2026-05-24' AND appointment_time = '17:00:00' AND status = 'scheduled') = 0 LIMIT 1;
