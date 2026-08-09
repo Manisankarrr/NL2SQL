@@ -12,7 +12,7 @@ INTENT_PATTERNS = {
     SQLIntent.SELECT: ["show", "list", "get", "find", "what", "how many", "count", "display", "fetch", "give me", "see"],
     SQLIntent.INSERT: ["add", "book", "create", "schedule", "new", "set up", "register", "make an"],
     SQLIntent.UPDATE: ["update", "change", "move", "reschedule", "modify", "edit", "shift", "change"],
-    SQLIntent.DELETE: ["cancel", "delete", "remove"]
+    SQLIntent.DELETE: ["cancel", "delete", "remove", "drop", "erase", "wipe"]
 }
 
 def classify_intent(text: str) -> SQLIntent:

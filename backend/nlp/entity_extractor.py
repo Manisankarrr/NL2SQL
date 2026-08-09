@@ -15,7 +15,25 @@ class ExtractedEntities:
     raw_date_text: Optional[str] = None
     raw_time_text: Optional[str] = None
 
+DATE_TRIGGER_WORDS = [
+    "today", "tomorrow", "yesterday", "monday", "tuesday",
+    "wednesday", "thursday", "friday", "saturday", "sunday",
+    "next", "last", "this week", "this month", "january",
+    "february", "march", "april", "may", "june", "july",
+    "august", "september", "october", "november", "december",
+    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep",
+    "oct", "nov", "dec", "morning", "evening", "night",
+    "tonight", "weekend", "/", "-"
+]
+
+def _has_date_reference(text: str) -> bool:
+    text_lower = text.lower()
+    return any(word in text_lower for word in DATE_TRIGGER_WORDS)
+
 def extract_date(text: str) -> Tuple[Optional[str], Optional[str]]:
+    if not _has_date_reference(text):
+        return None, None
+
     settings = {"PREFER_DATES_FROM": "future", "RETURN_AS_TIMEZONE_AWARE": False}
     
     # search_dates is more robust for finding dates inside a sentence
@@ -52,13 +70,36 @@ def extract_time(text: str) -> Tuple[Optional[str], Optional[str]]:
 def extract_customer_name(text: str) -> Optional[str]:
     patterns = [
         r'for\s+([A-Z][a-z]+)',
+        r"([A-Z][a-z]+)'s",
         r"([A-Z][a-z]+)'s\s+appointment",
-        r'of\s+([A-Z][a-z]+)'
+        r'of\s+([A-Z][a-z]+)',
+        r'(?:cancel|show|update|reschedule|book|add|list|get|find|delete)\s+(?:duplicate\s+|all\s+)?([A-Z][a-z]+)',
+        r'^([A-Z][a-z]+)\s+appointment'
     ]
     for pattern in patterns:
         match = re.search(pattern, text)
         if match:
             return match.group(1)
+            
+    # Pattern 6
+    EXCLUDE_WORDS = {
+        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+        "Saturday", "Sunday", "January", "February", "March",
+        "April", "June", "July", "August", "September", "October",
+        "November", "December", "Show", "List", "Find", "Get",
+        "Cancel", "Update", "Add", "Book", "Delete", "What", 
+        "When", "Where", "How", "Which", "The", "This", "That"
+    }
+    
+    words = text.split()
+    for word in words:
+        clean = re.sub(r"[^a-zA-Z]", "", word)
+        if (clean and clean[0].isupper() and 
+            clean[1:].islower() and 
+            len(clean) >= 3 and 
+            clean not in EXCLUDE_WORDS):
+            return clean
+            
     return None
 
 def extract_status(text: str) -> Optional[str]:
